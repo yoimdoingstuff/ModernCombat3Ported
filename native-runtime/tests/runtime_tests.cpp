@@ -212,6 +212,26 @@ int main() {
 
     mc3::arm::GuestCpu jni_guest;
     assert(jni_guest.initialize(&jni_memory));
+    jni_guest.set_svc_handler(
+        [&jni_imports, &jni_bridge](
+            std::uint32_t immediate,
+            mc3::arm::GuestCpu& guest
+        ) {
+            if (immediate != 0xFFu) {
+                guest.set_register(0, 0);
+                return;
+            }
+
+            const auto symbol =
+                jni_imports.symbol_for_slot(guest.register_value(12));
+            if (!symbol || !jni_bridge.handles(*symbol)) {
+                guest.set_register(0, 0);
+                return;
+            }
+
+            jni_bridge.handle(*symbol, guest);
+        }
+    );
     const std::uint32_t jni_call_args[] = {jni_bridge.env_pointer()};
     assert(jni_guest.call(*jni_probe, true, jni_call_args));
     assert(jni_guest.register_value(0) == 0x00010006u);
