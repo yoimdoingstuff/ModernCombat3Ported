@@ -528,42 +528,273 @@ bool GuestCpu::run(
             std::memcpy(&op, impl_->memory->data(pc), sizeof(op));
             impl_->registers[15] += 2;
 
-            // MOVS Rd, #imm8 (00100ddd_iiiiiiii)
-            if ((op & 0xF800) == 0x2000) {
-                const unsigned rd = (op >> 8) & 0x7;
-                impl_->registers[rd] = op & 0xFF;
+            // Shift (immediate) or Add/subtract register/immediate (000xx)
+            if ((op & 0xE000) == 0x0000) {
+                const unsigned op_type = (op >> 11) & 3;
+                const unsigned imm5 = (op >> 6) & 0x1F;
+                const unsigned rm = (op >> 3) & 0x7;
+                const unsigned rd = op & 0x7;
+
+                if (op_type == 0) { // LSLS
+                    impl_->registers[rd] = (imm5 == 0) ? impl_->registers[rm] : (impl_->registers[rm] << imm5);
+                } else if (op_type == 1) { // LSRS
+                    impl_->registers[rd] = (imm5 == 0) ? 0 : (impl_->registers[rm] >> imm5);
+                } else if (op_type == 2) { // ASRS
+                    impl_->registers[rd] = (imm5 == 0)
+                        ? (static_cast<std::int32_t>(impl_->registers[rm]) < 0 ? 0xFFFFFFFFu : 0)
+                        : static_cast<std::uint32_t>(static_cast<std::int32_t>(impl_->registers[rm]) >> imm5);
+                } else { // op_type == 3: Add/Subtract
+                    const unsigned sub_op = (op >> 9) & 3;
+                    const unsigned rn = (op >> 6) & 7;
+                    if (sub_op == 0) impl_->registers[rd] = impl_->registers[rn] + impl_->registers[rm];
+                    else if (sub_op == 1) impl_->registers[rd] = impl_->registers[rn] - impl_->registers[rm];
+                    else if (sub_op == 2) impl_->registers[rd] = impl_->registers[rn] + rm;
+                    else if (sub_op == 3) impl_->registers[rd] = impl_->registers[rn] - rm;
+                }
                 continue;
             }
 
-            // BX Rm (01000111_0mmmm000)
-            if ((op & 0xFF87) == 0x4700) {
+            // Move/Compare/Add/Subtract immediate (001xx)
+            if ((op & 0xE000) == 0x2000) {
+                const unsigned op_type = (op >> 11) & 3;
+                const unsigned rd = (op >> 8) & 7;
+                const std::uint32_t imm8 = op & 0xFF;
+
+                if (op_type == 0) impl_->registers[rd] = imm8;
+                else if (op_type == 2) impl_->registers[rd] += imm8;
+                else if (op_type == 3) impl_->registers[rd] -= imm8;
+                continue;
+            }
+
+            // ALU operations (010000)
+            if ((op & 0xFC00) == 0x4000) {
+                const unsigned alu = (op >> 6) & 0xF;
+                const unsigned rm = (op >> 3) & 7;
+                const unsigned rd = op & 7;
+
+                if (alu == 0) impl_->registers[rd] &= impl_->registers[rm];
+                else if (alu == 1) impl_->registers[rd] ^= impl_->registers[rm];
+                else if (alu == 2) impl_->registers[rd] <<= (impl_->registers[rm] & 0x1F);
+                else if (alu == 3) impl_->registers[rd] >>= (impl_->registers[rm] & 0x1F);
+                else if (alu == 4) impl_->registers[rd] = static_cast<std::uint32_t>(static_cast<std::int32_t>(impl_->registers[rd]) >> (impl_->registers[rm] & 0x1F));
+                else if (alu == 5) impl_->registers[rd] += impl_->registers[rm];
+                else if (alu == 6) impl_->registers[rd] -= impl_->registers[rm];
+                else if (alu == 7) {
+                    unsigned r = impl_->registers[rm] & 31;
+                    impl_->registers[rd] = r ? ((impl_->registers[rd] >> r) | (impl_->registers[rd] << (32 - r))) : impl_->registers[rd];
+                }
+                else if (alu == 9) impl_->registers[rd] = 0 - impl_->registers[rm];
+                else if (alu == 12) impl_->registers[rd] |= impl_->registers[rm];
+                else if (alu == 13) impl_->registers[rd] *= impl_->registers[rm];
+                else if (alu == 14) impl_->registers[rd] &= ~impl_->registers[rm];
+                else if (alu == 15) impl_->registers[rd] = ~impl_->registers[rm];
+                continue;
+            }
+
+            // High reg operations, BX, BLX (010001)
+            if ((op & 0xFC00) == 0x4400) {
+                const unsigned op_type = (op >> 8) & 3;
+                const unsigned d = ((op >> 4) & 8) | (op & 7);
                 const unsigned rm = (op >> 3) & 0xF;
-                const std::uint32_t target = impl_->registers[rm];
-                if (target == 0xFFFFFFFEu || target == 0) {
-                    impl_->returned_from_call = true;
+
+                if (op_type == 0) {
+                    impl_->registers[d] += impl_->registers[rm];
+                    continue;
+                }
+                if (op_type == 2) {
+                    impl_->registers[d] = impl_->registers[rm];
+                    continue;
+                }
+                if (op_type == 3) {
+                    const bool link = (op & 0x0080) != 0;
+                    const std::uint32_t target = impl_->registers[rm];
+                    if (link) {
+                        impl_->registers[14] = impl_->registers[15] | 1u;
+                    }
+                    if (target == 0xFFFFFFFEu || target == 0) {
+                        impl_->returned_from_call = true;
+                        return true;
+                    }
+                    thumb = (target & 1) != 0;
+                    impl_->registers[15] = target & ~1u;
+                    continue;
+                }
+            }
+
+            // LDR Rd, [PC, #imm8*4] (01001)
+            if ((op & 0xF800) == 0x4800) {
+                const unsigned rd = (op >> 8) & 7;
+                const std::uint32_t addr = ((pc + 2) & ~3u) + ((op & 0xFF) * 4);
+                if (impl_->memory->contains(addr, 4)) {
+                    std::memcpy(&impl_->registers[rd], impl_->memory->data(addr), 4);
+                }
+                continue;
+            }
+
+            // LDR / STR with register offset (0101xx)
+            if ((op & 0xF200) == 0x5000) {
+                const unsigned rd = op & 7;
+                const unsigned rn = (op >> 3) & 7;
+                const unsigned rm = (op >> 6) & 7;
+                const std::uint32_t addr = impl_->registers[rn] + impl_->registers[rm];
+                if (op & 0x0800) {
+                    if (impl_->memory->contains(addr, 4)) std::memcpy(&impl_->registers[rd], impl_->memory->data(addr), 4);
+                } else {
+                    impl_->memory->write(addr, &impl_->registers[rd], 4);
+                }
+                continue;
+            }
+
+            // LDR / STR with imm5*4 offset (011xx)
+            if ((op & 0xE000) == 0x6000) {
+                const bool is_load = (op & 0x0800) != 0;
+                const bool is_byte = (op & 0x1000) != 0;
+                const unsigned imm5 = (op >> 6) & 0x1F;
+                const unsigned rn = (op >> 3) & 7;
+                const unsigned rd = op & 7;
+                const std::uint32_t addr = impl_->registers[rn] + (is_byte ? imm5 : (imm5 * 4));
+
+                if (is_load) {
+                    if (is_byte) {
+                        impl_->registers[rd] = impl_->memory->contains(addr, 1) ? *impl_->memory->data(addr) : 0;
+                    } else {
+                        if (impl_->memory->contains(addr, 4)) std::memcpy(&impl_->registers[rd], impl_->memory->data(addr), 4);
+                    }
+                } else {
+                    if (is_byte) {
+                        std::uint8_t b = impl_->registers[rd] & 0xFF;
+                        impl_->memory->write(addr, &b, 1);
+                    } else {
+                        impl_->memory->write(addr, &impl_->registers[rd], 4);
+                    }
+                }
+                continue;
+            }
+
+            // LDR / STR SP, #imm8*4 (1001)
+            if ((op & 0xF000) == 0x9000) {
+                const bool is_load = (op & 0x0800) != 0;
+                const unsigned rd = (op >> 8) & 7;
+                const std::uint32_t addr = impl_->registers[13] + ((op & 0xFF) * 4);
+                if (is_load) {
+                    if (impl_->memory->contains(addr, 4)) std::memcpy(&impl_->registers[rd], impl_->memory->data(addr), 4);
+                } else {
+                    impl_->memory->write(addr, &impl_->registers[rd], 4);
+                }
+                continue;
+            }
+
+            // ADD Rd, PC/SP, #imm8*4 (1010)
+            if ((op & 0xF000) == 0xA000) {
+                const bool from_sp = (op & 0x0800) != 0;
+                const unsigned rd = (op >> 8) & 7;
+                const std::uint32_t base = from_sp ? impl_->registers[13] : ((pc + 2) & ~3u);
+                impl_->registers[rd] = base + ((op & 0xFF) * 4);
+                continue;
+            }
+
+            // Misc instructions (1011)
+            if ((op & 0xF000) == 0xB000) {
+                if ((op & 0xFF00) == 0xB000) {
+                    const std::uint32_t off = (op & 0x7F) * 4;
+                    if (op & 0x80) impl_->registers[13] -= off;
+                    else impl_->registers[13] += off;
+                    continue;
+                }
+                if ((op & 0xFE00) == 0xB400) { // PUSH
+                    const bool push_lr = (op & 0x0100) != 0;
+                    if (push_lr) {
+                        impl_->registers[13] -= 4;
+                        impl_->memory->write(impl_->registers[13], &impl_->registers[14], 4);
+                    }
+                    for (int r = 7; r >= 0; --r) {
+                        if (op & (1 << r)) {
+                            impl_->registers[13] -= 4;
+                            impl_->memory->write(impl_->registers[13], &impl_->registers[r], 4);
+                        }
+                    }
+                    continue;
+                }
+                if ((op & 0xFE00) == 0xBC00) { // POP
+                    const bool pop_pc = (op & 0x0100) != 0;
+                    for (int r = 0; r <= 7; ++r) {
+                        if (op & (1 << r)) {
+                            if (impl_->memory->contains(impl_->registers[13], 4)) {
+                                std::memcpy(&impl_->registers[r], impl_->memory->data(impl_->registers[13]), 4);
+                            }
+                            impl_->registers[13] += 4;
+                        }
+                    }
+                    if (pop_pc) {
+                        std::uint32_t target = 0;
+                        if (impl_->memory->contains(impl_->registers[13], 4)) {
+                            std::memcpy(&target, impl_->memory->data(impl_->registers[13]), 4);
+                        }
+                        impl_->registers[13] += 4;
+                        if (target == 0xFFFFFFFEu || target == 0) {
+                            impl_->returned_from_call = true;
+                            return true;
+                        }
+                        thumb = (target & 1) != 0;
+                        impl_->registers[15] = target & ~1u;
+                    }
+                    continue;
+                }
+                if (op == 0xBF00) continue; // NOP
+            }
+
+            // SVC / Conditional branch (1101)
+            if ((op & 0xF000) == 0xD000) {
+                if ((op & 0xFF00) == 0xDF00) {
+                    const std::uint8_t imm8 = op & 0xFF;
+                    if (imm8 == 0xFE) {
+                        impl_->returned_from_call = true;
+                        return true;
+                    }
+                    if (impl_->svc_handler) {
+                        impl_->svc_handler(imm8, *this);
+                    }
+                    continue;
+                }
+                const std::int8_t offset = static_cast<std::int8_t>(op & 0xFF);
+                impl_->registers[15] = pc + 2 + (offset * 2);
+                continue;
+            }
+
+            // Unconditional branch (11100)
+            if ((op & 0xF800) == 0xE000) {
+                const std::int16_t raw = static_cast<std::int16_t>((op & 0x7FF) << 5) >> 4;
+                if (raw == -4) { // infinite loop B . -> finish cleanly
                     return true;
                 }
-                thumb = (target & 1) != 0;
-                impl_->registers[15] = target & ~1u;
+                impl_->registers[15] = pc + 2 + raw;
                 continue;
             }
 
-            // SVC #imm8 (11011111_iiiiiiii)
-            if ((op & 0xFF00) == 0xDF00) {
-                if (impl_->svc_handler) {
-                    impl_->svc_handler(op & 0xFF, *this);
+            // 32-bit Thumb BL (11110)
+            if ((op & 0xF800) == 0xF000) {
+                std::uint16_t op2 = 0;
+                if (impl_->memory->contains(impl_->registers[15], 2)) {
+                    std::memcpy(&op2, impl_->memory->data(impl_->registers[15]), 2);
                 }
-                continue;
-            }
-
-            // NOP
-            if (op == 0xBF00) {
+                impl_->registers[15] += 2;
+                const std::int32_t s = (op >> 10) & 1;
+                const std::int32_t j1 = (op2 >> 13) & 1;
+                const std::int32_t j2 = (op2 >> 11) & 1;
+                const std::int32_t i1 = !(j1 ^ s);
+                const std::int32_t i2 = !(j2 ^ s);
+                const std::int32_t imm10 = op & 0x3FF;
+                const std::int32_t imm11 = op2 & 0x7FF;
+                const std::int32_t offset = (s ? 0xFF000000 : 0) | (i1 << 23) | (i2 << 22) | (imm10 << 12) | (imm11 << 1);
+                impl_->registers[14] = impl_->registers[15] | 1u;
+                impl_->registers[15] = (pc + 2) + offset;
                 continue;
             }
 
             impl_->returned_from_call = true;
             return true;
         } else {
+            // ARM 32-bit mode
             if (!impl_->memory->contains(pc, sizeof(std::uint32_t))) {
                 impl_->faulted = true;
                 return false;
@@ -573,10 +804,58 @@ bool GuestCpu::run(
             std::memcpy(&op, impl_->memory->data(pc), sizeof(op));
             impl_->registers[15] += 4;
 
-            // BX LR / BX Rm
-            if ((op & 0x0FFFFFF0) == 0x012FFF10) {
+            // MOVW Rd, #imm16
+            if ((op & 0x0FF00000) == 0x03000000) {
+                const std::uint32_t imm16 = ((op >> 4) & 0xF000u) | (op & 0x0FFFu);
+                const unsigned rd = (op >> 12) & 0xF;
+                impl_->registers[rd] = imm16;
+                continue;
+            }
+
+            // MOVT Rd, #imm16
+            if ((op & 0x0FF00000) == 0x03400000) {
+                const std::uint32_t imm16 = ((op >> 4) & 0xF000u) | (op & 0x0FFFu);
+                const unsigned rd = (op >> 12) & 0xF;
+                impl_->registers[rd] = (impl_->registers[rd] & 0xFFFFu) | (imm16 << 16);
+                continue;
+            }
+
+            // Data processing immediate
+            if ((op & 0x0E000000) == 0x02000000) {
+                const unsigned alu = (op >> 21) & 0xF;
+                const unsigned rd = (op >> 12) & 0xF;
+                const unsigned rn = (op >> 16) & 0xF;
+                std::uint32_t imm = op & 0xFF;
+                const unsigned rot = (op >> 8) & 0xF;
+                if (rot) imm = (imm >> (rot * 2)) | (imm << (32 - rot * 2));
+
+                if (alu == 13) impl_->registers[rd] = imm; // MOV
+                else if (alu == 4) impl_->registers[rd] = impl_->registers[rn] + imm; // ADD
+                else if (alu == 2) impl_->registers[rd] = impl_->registers[rn] - imm; // SUB
+                else if (alu == 0) impl_->registers[rd] = impl_->registers[rn] & imm; // AND
+                else if (alu == 12) impl_->registers[rd] = impl_->registers[rn] | imm; // ORR
+                continue;
+            }
+
+            // Data processing register
+            if ((op & 0x0E000000) == 0x00000000) {
+                const unsigned alu = (op >> 21) & 0xF;
+                const unsigned rd = (op >> 12) & 0xF;
+                const unsigned rn = (op >> 16) & 0xF;
+                const unsigned rm = op & 0xF;
+
+                if (alu == 13) impl_->registers[rd] = impl_->registers[rm]; // MOV
+                else if (alu == 4) impl_->registers[rd] = impl_->registers[rn] + impl_->registers[rm]; // ADD
+                else if (alu == 2) impl_->registers[rd] = impl_->registers[rn] - impl_->registers[rm]; // SUB
+                continue;
+            }
+
+            // BX / BLX Rm
+            if ((op & 0x0FFFFFF0) == 0x012FFF10 || (op & 0x0FFFFFF0) == 0x012FFF30) {
+                const bool link = (op & 0x20) != 0;
                 const unsigned rm = op & 0xF;
                 const std::uint32_t target = impl_->registers[rm];
+                if (link) impl_->registers[14] = pc + 4;
                 if (target == 0xFFFFFFFEu || target == 0) {
                     impl_->returned_from_call = true;
                     return true;
@@ -586,9 +865,45 @@ bool GuestCpu::run(
                 continue;
             }
 
-            // MOV R0, #imm8
-            if ((op & 0xFFFFFF00) == 0xE3A00000) {
-                impl_->registers[0] = op & 0xFF;
+            // SVC #imm24
+            if ((op & 0x0F000000) == 0x0F000000) {
+                const std::uint32_t imm = op & 0x00FFFFFFu;
+                if (imm == 0xFE) {
+                    impl_->returned_from_call = true;
+                    return true;
+                }
+                if (impl_->svc_handler) {
+                    impl_->svc_handler(imm, *this);
+                }
+                continue;
+            }
+
+            // LDR / STR immediate offset
+            if ((op & 0x0C000000) == 0x04000000) {
+                const bool is_load = (op & 0x00100000) != 0;
+                const bool is_up = (op & 0x00800000) != 0;
+                const unsigned rn = (op >> 16) & 0xF;
+                const unsigned rd = (op >> 12) & 0xF;
+                const std::uint32_t offset = op & 0xFFF;
+                const std::uint32_t addr = is_up ? (impl_->registers[rn] + offset) : (impl_->registers[rn] - offset);
+
+                if (is_load) {
+                    if (impl_->memory->contains(addr, 4)) std::memcpy(&impl_->registers[rd], impl_->memory->data(addr), 4);
+                } else {
+                    impl_->memory->write(addr, &impl_->registers[rd], 4);
+                }
+                continue;
+            }
+
+            // B / BL branch
+            if ((op & 0x0E000000) == 0x0A000000) {
+                const bool link = (op & 0x01000000) != 0;
+                const std::int32_t offset = static_cast<std::int32_t>(op << 8) >> 6;
+                if (link) impl_->registers[14] = pc + 4;
+                if (offset == -8) { // infinite loop B . -> finish
+                    return true;
+                }
+                impl_->registers[15] = pc + 8 + offset;
                 continue;
             }
 

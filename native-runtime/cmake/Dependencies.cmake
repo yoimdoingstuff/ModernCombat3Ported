@@ -1,3 +1,10 @@
+find_package(Boost 1.57 QUIET)
+if(NOT Boost_FOUND)
+    message(WARNING "Boost 1.57+ was not found on system. Dynarmic requires Boost. Falling back to built-in interpreter.")
+    set(MC3_ENABLE_DYNARMIC OFF PARENT_SCOPE)
+    return()
+endif()
+
 include(FetchContent)
 
 # Dynarmic is used only as an ARM CPU execution/JIT component.

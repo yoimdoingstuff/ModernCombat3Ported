@@ -16,7 +16,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/bin)
 
 option(MC3_ENABLE_TESTS "Build MC3 Ported tests" ON)
 option(MC3_ENABLE_TOOLS "Build MC3 Ported developer tools" ON)
-option(MC3_ENABLE_DYNARMIC "Enable the ARMv7 JIT backend" ON)
+option(MC3_ENABLE_DYNARMIC "Enable the ARMv7 JIT backend" OFF)
 
 # Dynarmic only supports x86_64 host architectures
 if(MC3_ENABLE_DYNARMIC)

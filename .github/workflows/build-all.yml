@@ -27,7 +27,7 @@ jobs:
           cache: 'npm'
 
       - name: Install Node Dependencies
-        run: npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+        run: npm ci || npm install --legacy-peer-deps
 
       - name: Typecheck / Lint
         run: npm run lint
@@ -58,8 +58,6 @@ jobs:
     steps:
       - name: Checkout Source
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Setup Linux Dependencies
         if: runner.os == 'Linux'
@@ -70,25 +68,20 @@ jobs:
       - name: Setup macOS Dependencies
         if: runner.os == 'macOS'
         run: |
-          brew install cmake ninja sdl2
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install ninja sdl2 || true
 
       - name: Configure CMake (Windows)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
           cd native-runtime
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DMC3_ENABLE_TESTS=ON `
-            -DMC3_ENABLE_TOOLS=ON
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DMC3_ENABLE_TESTS=ON -DMC3_ENABLE_TOOLS=ON -DMC3_ENABLE_DYNARMIC=OFF
 
       - name: Configure CMake (POSIX)
         if: runner.os != 'Windows'
         run: |
           cd native-runtime
-          cmake -S . -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DMC3_ENABLE_TESTS=ON \
-            -DMC3_ENABLE_TOOLS=ON
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMC3_ENABLE_TESTS=ON -DMC3_ENABLE_TOOLS=ON -DMC3_ENABLE_DYNARMIC=OFF
 
       - name: Compile Executables & Tools
         run: |
@@ -102,41 +95,39 @@ jobs:
 
       - name: Package Release Artifacts (Windows)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
           cd native-runtime
-          New-Item -ItemType Directory -Force -Path dist
-          if (Test-Path "build\bin\Release\mc3.exe") {
-            Copy-Item "build\bin\Release\*.exe" -Destination "dist\"
-          } elseif (Test-Path "build\bin\mc3.exe") {
-            Copy-Item "build\bin\*.exe" -Destination "dist\"
-          } elseif (Test-Path "build\Release\mc3.exe") {
-            Copy-Item "build\Release\*.exe" -Destination "dist\"
-          }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Get-ChildItem -Path build -Recurse -Include mc3.exe,mc3inspect.exe,mc3builder.exe | Copy-Item -Destination dist\ -Force
           if (Test-Path "README.md") { Copy-Item "README.md" "dist\" }
           if (Test-Path "agents.md") { Copy-Item "agents.md" "dist\" }
-          Compress-Archive -Path dist\* -DestinationPath ..\${{ matrix.archive }} -Force
+          Get-ChildItem dist
+          Compress-Archive -Path dist\* -DestinationPath "$pwd\..\${{ matrix.archive }}" -Force
 
       - name: Package Release Artifacts (Linux)
         if: runner.os == 'Linux'
         run: |
           cd native-runtime
           mkdir -p dist
-          find build -maxdepth 3 -type f \( -name "mc3" -o -name "mc3inspect" -o -name "mc3builder" \) -exec cp {} dist/ \;
+          find build -type f \( -name "mc3" -o -name "mc3inspect" -o -name "mc3builder" \) -exec cp -f {} dist/ \;
           [ -f README.md ] && cp README.md dist/
           [ -f agents.md ] && cp agents.md dist/
           chmod +x dist/mc3 dist/mc3inspect dist/mc3builder 2>/dev/null || true
-          tar -czvf ../${{ matrix.archive }} -C dist .
+          ls -la dist/
+          tar -czvf "../${{ matrix.archive }}" -C dist .
 
       - name: Package Release Artifacts (macOS)
         if: runner.os == 'macOS'
         run: |
           cd native-runtime
           mkdir -p dist
-          find build -maxdepth 3 -type f \( -name "mc3" -o -name "mc3inspect" -o -name "mc3builder" \) -exec cp {} dist/ \;
+          find build -type f \( -name "mc3" -o -name "mc3inspect" -o -name "mc3builder" \) -exec cp -f {} dist/ \;
           [ -f README.md ] && cp README.md dist/
           [ -f agents.md ] && cp agents.md dist/
           chmod +x dist/mc3 dist/mc3inspect dist/mc3builder 2>/dev/null || true
-          (cd dist && zip -r ../../${{ matrix.archive }} .)
+          ls -la dist/
+          (cd dist && zip -r "../../${{ matrix.archive }}" .)
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4

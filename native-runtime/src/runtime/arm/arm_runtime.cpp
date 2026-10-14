@@ -95,8 +95,8 @@ RuntimeInfo query_runtime() {
     info.backend_name = "dynarmic-a32";
     info.available = true;
 #else
-    info.backend_name = "not-configured";
-    info.available = false;
+    info.backend_name = "mc3-interpreter";
+    info.available = true;
 #endif
 
 #if defined(_M_ARM) || defined(__arm__)
