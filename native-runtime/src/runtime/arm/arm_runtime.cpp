@@ -14,6 +14,7 @@
 
 namespace mc3::arm {
 
+ArmRuntime::ArmRuntime() = default;
 ArmRuntime::~ArmRuntime() = default;
 
 bool ArmRuntime::configure_assets(

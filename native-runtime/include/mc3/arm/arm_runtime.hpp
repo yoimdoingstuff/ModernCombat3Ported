@@ -32,6 +32,7 @@ RuntimeInfo query_runtime();
 
 class ArmRuntime {
 public:
+    ArmRuntime();
     ~ArmRuntime();
 
     bool initialize();
