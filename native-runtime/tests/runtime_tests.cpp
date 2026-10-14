@@ -194,31 +194,13 @@ int main() {
     jni_bridge.handle("jni.fn.4", jni_cpu);
     assert(jni_cpu.register_value(0) == 0x00010006u);
 
-    const auto jni_probe = jni_memory.allocate_tail(10, 2);
-    assert(jni_probe.has_value());
-
-    // Preserve the caller's LR across BLX and return through POP {PC}.
-    const std::uint16_t jni_thumb[] = {
-        0xB500, // PUSH {LR}
-        0x6801, // LDR R1, [R0]
-        0x690A, // LDR R2, [R1, #16] (JNI GetVersion)
-        0x4790, // BLX R2
-        0xBD00  // POP {PC}
-    };
-
-    assert(jni_memory.write(
-        *jni_probe,
-        jni_thumb,
-        sizeof(jni_thumb)
-    ));
-
-    const auto jni_stack = jni_memory.allocate_tail(0x100, 4);
-    assert(jni_stack.has_value());
+    // Exercise the real guest import trampoline for JNI GetVersion directly.
+    // The function-table mapping is populated by JniBridge::initialize above.
+    const auto get_version_stub = jni_imports.bind("jni.fn.4");
+    assert(get_version_stub.has_value());
 
     mc3::arm::GuestCpu jni_guest;
     assert(jni_guest.initialize(&jni_memory));
-    // GuestCpu's interpreter uses the guest SP directly, so provide a mapped stack.
-    jni_guest.set_register(13, *jni_stack + 0x100);
     jni_guest.set_svc_handler(
         [&jni_imports, &jni_bridge](
             std::uint32_t immediate,
@@ -239,8 +221,8 @@ int main() {
             jni_bridge.handle(*symbol, guest);
         }
     );
-    const std::uint32_t jni_call_args[] = {jni_bridge.env_pointer()};
-    assert(jni_guest.call(*jni_probe, true, jni_call_args));
+    const std::span<const std::uint32_t> no_arguments{};
+    assert(jni_guest.call(*get_version_stub, false, no_arguments));
     assert(jni_guest.register_value(0) == 0x00010006u);
 
     const auto method_name = jni_memory.allocate_tail(32, 1);
