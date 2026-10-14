@@ -212,8 +212,13 @@ int main() {
         sizeof(jni_thumb)
     ));
 
+    const auto jni_stack = jni_memory.allocate_tail(0x100, 4);
+    assert(jni_stack.has_value());
+
     mc3::arm::GuestCpu jni_guest;
     assert(jni_guest.initialize(&jni_memory));
+    // GuestCpu's interpreter uses the guest SP directly, so provide a mapped stack.
+    jni_guest.set_register(13, *jni_stack + 0x100);
     jni_guest.set_svc_handler(
         [&jni_imports, &jni_bridge](
             std::uint32_t immediate,
