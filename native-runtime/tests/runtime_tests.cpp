@@ -212,13 +212,8 @@ int main() {
 
     mc3::arm::GuestCpu jni_guest;
     assert(jni_guest.initialize(&jni_memory));
-    assert(
-        jni_guest.call(
-            *jni_probe,
-            true,
-            {jni_bridge.env_pointer()}
-        )
-    );
+    const std::uint32_t jni_call_args[] = {jni_bridge.env_pointer()};
+    assert(jni_guest.call(*jni_probe, true, jni_call_args));
     assert(jni_guest.register_value(0) == 0x00010006u);
 
     const auto method_name = jni_memory.allocate_tail(32, 1);
