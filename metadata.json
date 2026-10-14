@@ -1,0 +1,6 @@
+{
+  "name": "MC3 Ported - Modern Combat 3 Translation Layer",
+  "description": "Native PC translation layer and compatibility runtime for Modern Combat 3: Fallen Nation on Windows, macOS, and Linux with Local Wi-Fi and Bluetooth multiplayer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

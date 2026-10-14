@@ -1,0 +1,106 @@
+name: Multi-Platform CI & Release Packaging
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: mc3ported-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.os }} (${{ matrix.compiler }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            compiler: msvc
+            archive: mc3-windows-x64.zip
+            binary_ext: .exe
+          - os: ubuntu-latest
+            compiler: gcc
+            archive: mc3-linux-x64.tar.gz
+            binary_ext: ""
+          - os: macos-latest
+            compiler: clang
+            archive: mc3-macos-universal.zip
+            binary_ext: ""
+
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Linux Dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ libboost-all-dev libsdl3-dev
+
+      - name: Setup macOS Dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake ninja boost sdl3
+
+      - name: Configure CMake (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DMC3_ENABLE_TESTS=ON `
+            -DMC3_ENABLE_TOOLS=ON `
+            -DMC3_ENABLE_DYNARMIC=ON
+
+      - name: Configure CMake (POSIX)
+        if: runner.os != 'Windows'
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMC3_ENABLE_TESTS=ON \
+            -DMC3_ENABLE_TOOLS=ON \
+            -DMC3_ENABLE_DYNARMIC=ON
+
+      - name: Compile Executables & Builder Tool
+        run: cmake --build build --config Release --parallel 2
+
+      - name: Execute Runtime Tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Package Release Artifacts (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          mkdir dist
+          copy build\bin\Release\mc3.exe dist\
+          copy build\bin\Release\mc3inspect.exe dist\
+          copy build\bin\Release\mc3builder.exe dist\
+          copy README.md dist\
+          copy agents.md dist\
+          7z a ${{ matrix.archive }} .\dist\*
+
+      - name: Package Release Artifacts (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist
+          cp build/mc3 build/mc3inspect build/mc3builder dist/
+          cp README.md agents.md dist/
+          tar -czvf ${{ matrix.archive }} -C dist .
+
+      - name: Package Release Artifacts (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist
+          cp build/mc3 build/mc3inspect build/mc3builder dist/
+          cp README.md agents.md dist/
+          zip -r ${{ matrix.archive }} dist
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-binaries
+          path: ${{ matrix.archive }}
