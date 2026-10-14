@@ -552,8 +552,8 @@ void JniBridge::handle(
         case kJniGetStaticMethodId: {
             const auto name =
                 read_guest_string(guest.register_value(2), 1024);
-            if (name) {
-                if (const auto known = reference_method_id(*name)) {
+            if (!name.empty()) {
+                if (const auto known = reference_method_id(name)) {
                     guest.set_register(0, *known);
                     return;
                 }
@@ -574,11 +574,11 @@ void JniBridge::handle(
         case kJniGetStaticFieldId: {
             const auto name =
                 read_guest_string(guest.register_value(2), 256);
-            if (name && *name == "WINDOW_SERVICE") {
+            if (name == "WINDOW_SERVICE") {
                 guest.set_register(0, 0);
                 return;
             }
-            if (name && *name == "SDK_INT") {
+            if (name == "SDK_INT") {
                 guest.set_register(0, 1);
                 return;
             }
