@@ -16,14 +16,14 @@ MultiplayerManager::~MultiplayerManager() {
 bool MultiplayerManager::initialize_wifi(uint16_t broadcast_port) {
     lan_port_ = broadcast_port;
     active_transport_ = TransportMode::WifiLan;
-    MC3_LOG_INFO("Multiplayer: Initialized Local Wi-Fi (LAN broadcast on UDP port " + std::to_string(lan_port_) + ")");
+    mc3::log_info("Multiplayer: Initialized Local Wi-Fi (LAN broadcast on UDP port " + std::to_string(lan_port_) + ")");
     return true;
 }
 
 bool MultiplayerManager::initialize_bluetooth(const std::string& service_uuid) {
     bt_uuid_ = service_uuid;
     active_transport_ = TransportMode::BluetoothRfcomm;
-    MC3_LOG_INFO("Multiplayer: Initialized Local Bluetooth (RFCOMM SPP UUID: " + bt_uuid_ + ")");
+    mc3::log_info("Multiplayer: Initialized Local Bluetooth (RFCOMM SPP UUID: " + bt_uuid_ + ")");
     return true;
 }
 
@@ -39,7 +39,7 @@ bool MultiplayerManager::start_discovery(TransportMode mode) {
     discovered_peers_.clear();
 
     if (mode == TransportMode::WifiLan) {
-        MC3_LOG_INFO("Multiplayer: Starting UDP broadcast discovery on port " + std::to_string(lan_port_));
+        mc3::log_info("Multiplayer: Starting UDP broadcast discovery on port " + std::to_string(lan_port_));
         // Register simulated discovery beacon receiver
         PeerDevice local_peer;
         local_peer.id = "peer_lan_01";
@@ -57,7 +57,7 @@ bool MultiplayerManager::start_discovery(TransportMode mode) {
             on_peer_discovered_(local_peer);
         }
     } else if (mode == TransportMode::BluetoothRfcomm) {
-        MC3_LOG_INFO("Multiplayer: Starting Bluetooth inquiry / device scan (UUID " + bt_uuid_ + ")");
+        mc3::log_info("Multiplayer: Starting Bluetooth inquiry / device scan (UUID " + bt_uuid_ + ")");
         PeerDevice bt_peer;
         bt_peer.id = "peer_bt_01";
         bt_peer.name = "BravoActual (BT)";
@@ -81,14 +81,14 @@ bool MultiplayerManager::start_discovery(TransportMode mode) {
 void MultiplayerManager::stop_discovery() {
     if (discovering_) {
         discovering_ = false;
-        MC3_LOG_INFO("Multiplayer: Discovery stopped.");
+        mc3::log_info("Multiplayer: Discovery stopped.");
     }
 }
 
 bool MultiplayerManager::host_session(TransportMode mode, const std::string& session_name, uint32_t max_players) {
     active_transport_ = mode;
     role_ = SessionRole::Host;
-    MC3_LOG_INFO("Multiplayer: Hosted " + std::string(mode == TransportMode::WifiLan ? "Wi-Fi LAN" : "Bluetooth") +
+    mc3::log_info("Multiplayer: Hosted " + std::string(mode == TransportMode::WifiLan ? "Wi-Fi LAN" : "Bluetooth") +
                  " session: '" + session_name + "' (Max players: " + std::to_string(max_players) + ")");
     return true;
 }
@@ -96,13 +96,13 @@ bool MultiplayerManager::host_session(TransportMode mode, const std::string& ses
 bool MultiplayerManager::join_session(const PeerDevice& peer) {
     role_ = SessionRole::Client;
     active_transport_ = peer.transport;
-    MC3_LOG_INFO("Multiplayer: Joining session on " + peer.name + " (" + peer.endpoint + ")");
+    mc3::log_info("Multiplayer: Joining session on " + peer.name + " (" + peer.endpoint + ")");
     return true;
 }
 
 void MultiplayerManager::leave_session() {
     if (role_ != SessionRole::Idle) {
-        MC3_LOG_INFO("Multiplayer: Left session.");
+        mc3::log_info("Multiplayer: Left session.");
         role_ = SessionRole::Idle;
     }
 }
