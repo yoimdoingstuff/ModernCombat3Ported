@@ -15,10 +15,10 @@ AudioEngine::~AudioEngine() {
 bool AudioEngine::initialize(const AudioConfig& config) {
     config_ = config;
     initialized_ = true;
-    MC3_LOG_INFO("AudioEngine: Initialized OpenSL ES audio bridge -> Host PCM Stream (" +
+    mc3::log_info("AudioEngine: Initialized OpenSL ES audio bridge -> Host PCM Stream (" +
                  std::to_string(config_.sample_rate) + "Hz, Stereo, Latency: low)");
     if (config_.spatial_audio_enabled) {
-        MC3_LOG_INFO("AudioEngine: 3D Spatial Positional Audio Emulation ACTIVE (HRTF / Stereo Pan + Inverse Distance Rolloff).");
+        mc3::log_info("AudioEngine: 3D Spatial Positional Audio Emulation ACTIVE (HRTF / Stereo Pan + Inverse Distance Rolloff).");
     }
     return true;
 }
@@ -26,7 +26,7 @@ bool AudioEngine::initialize(const AudioConfig& config) {
 void AudioEngine::shutdown() {
     if (initialized_) {
         initialized_ = false;
-        MC3_LOG_INFO("AudioEngine: Audio backend shut down cleanly.");
+        mc3::log_info("AudioEngine: Audio backend shut down cleanly.");
     }
 }
 
@@ -36,11 +36,11 @@ void AudioEngine::queue_pcm_buffer(const void* data, size_t bytes) {
 }
 
 void AudioEngine::play_sound(const std::string& asset_path, float volume) {
-    MC3_LOG_DEBUG("AudioEngine: Play SFX: " + asset_path + " (vol=" + std::to_string(volume) + ")");
+    mc3::log_debug("AudioEngine: Play SFX: " + asset_path + " (vol=" + std::to_string(volume) + ")");
 }
 
 void AudioEngine::play_music(const std::string& music_path, bool loop) {
-    MC3_LOG_INFO("AudioEngine: Play Music Stream: " + music_path + " (loop=" + (loop ? "yes" : "no") + ")");
+    mc3::log_info("AudioEngine: Play Music Stream: " + music_path + " (loop=" + (loop ? "yes" : "no") + ")");
 }
 
 void AudioEngine::set_listener_transform(const Vec3& position, const Vec3& forward, const Vec3& up) {
@@ -99,12 +99,12 @@ void AudioEngine::play_sound_spatial(const std::string& asset_path, const Spatia
     ss << std::fixed << std::setprecision(2);
     ss << "AudioEngine: 3D Positional SFX: " << asset_path
        << " [dist=" << distance << "m, pan=" << pan << ", L=" << left_gain << ", R=" << right_gain << "]";
-    MC3_LOG_DEBUG(ss.str());
+    mc3::log_debug(ss.str());
 }
 
 void AudioEngine::set_master_volume(float volume) {
     config_.master_volume = volume;
-    MC3_LOG_INFO("AudioEngine: Set master volume: " + std::to_string(volume));
+    mc3::log_info("AudioEngine: Set master volume: " + std::to_string(volume));
 }
 
 } // namespace mc3::audio
