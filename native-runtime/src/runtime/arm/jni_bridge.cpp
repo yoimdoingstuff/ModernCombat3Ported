@@ -603,7 +603,7 @@ void JniBridge::handle(
             }
 
             const auto value = read_guest_string(source, length);
-            const backing = allocate_guest_string(*memory_, value);
+            const auto backing = allocate_guest_string(*memory_, value);
             if (!backing) {
                 guest.set_register(0, 0);
                 return;
@@ -626,7 +626,7 @@ void JniBridge::handle(
         case 114:
         case 115:
         case 116: {
-            const method = guest.register_value(2);
+            const auto method = guest.register_value(2);
             std::optional<std::string> value;
 
             switch (method) {
