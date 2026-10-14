@@ -837,20 +837,8 @@ bool GuestCpu::run(
                 continue;
             }
 
-            // Data processing register
-            if ((op & 0x0E000000) == 0x00000000) {
-                const unsigned alu = (op >> 21) & 0xF;
-                const unsigned rd = (op >> 12) & 0xF;
-                const unsigned rn = (op >> 16) & 0xF;
-                const unsigned rm = op & 0xF;
-
-                if (alu == 13) impl_->registers[rd] = impl_->registers[rm]; // MOV
-                else if (alu == 4) impl_->registers[rd] = impl_->registers[rn] + impl_->registers[rm]; // ADD
-                else if (alu == 2) impl_->registers[rd] = impl_->registers[rn] - impl_->registers[rm]; // SUB
-                continue;
-            }
-
-            // BX / BLX Rm
+            // BX / BLX Rm must be decoded before generic data-processing
+            // instructions: its encoding otherwise matches that broader class.
             if ((op & 0x0FFFFFF0) == 0x012FFF10 || (op & 0x0FFFFFF0) == 0x012FFF30) {
                 const bool link = (op & 0x20) != 0;
                 const unsigned rm = op & 0xF;
@@ -862,6 +850,22 @@ bool GuestCpu::run(
                 }
                 thumb = (target & 1) != 0;
                 impl_->registers[15] = target & ~1u;
+                continue;
+            }
+
+            // Data processing register; explicitly exclude BX/BLX so branch
+            // exchange can never be swallowed by this generic decoder.
+            if ((op & 0x0E000000) == 0x00000000 &&
+                (op & 0x0FFFFFF0) != 0x012FFF10 &&
+                (op & 0x0FFFFFF0) != 0x012FFF30) {
+                const unsigned alu = (op >> 21) & 0xF;
+                const unsigned rd = (op >> 12) & 0xF;
+                const unsigned rn = (op >> 16) & 0xF;
+                const unsigned rm = op & 0xF;
+
+                if (alu == 13) impl_->registers[rd] = impl_->registers[rm]; // MOV
+                else if (alu == 4) impl_->registers[rd] = impl_->registers[rn] + impl_->registers[rm]; // ADD
+                else if (alu == 2) impl_->registers[rd] = impl_->registers[rn] - impl_->registers[rm]; // SUB
                 continue;
             }
 
