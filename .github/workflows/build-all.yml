@@ -70,12 +70,18 @@ jobs:
         run: |
           HOMEBREW_NO_AUTO_UPDATE=1 brew install ninja sdl2 || true
 
+      - name: Setup MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Configure CMake (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           cd native-runtime
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DMC3_ENABLE_TESTS=ON -DMC3_ENABLE_TOOLS=ON -DMC3_ENABLE_DYNARMIC=OFF
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMC3_ENABLE_TESTS=ON -DMC3_ENABLE_TOOLS=ON -DMC3_ENABLE_DYNARMIC=OFF
 
       - name: Configure CMake (POSIX)
         if: runner.os != 'Windows'
