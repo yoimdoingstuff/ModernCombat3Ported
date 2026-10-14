@@ -8,7 +8,7 @@ InputManager::~InputManager() = default;
 
 void InputManager::initialize(float mouse_sensitivity) {
     mouse_sensitivity_ = mouse_sensitivity;
-    MC3_LOG_INFO("InputManager: Initialized PC input translation (Mouse Look sens=" +
+    mc3::log_info("InputManager: Initialized PC input translation (Mouse Look sens=" +
                  std::to_string(mouse_sensitivity_) + ", Touchscreen HUD strictly SUPPRESSED)");
 }
 
