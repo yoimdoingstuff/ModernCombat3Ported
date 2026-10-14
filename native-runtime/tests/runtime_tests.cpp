@@ -194,14 +194,16 @@ int main() {
     jni_bridge.handle("jni.fn.4", jni_cpu);
     assert(jni_cpu.register_value(0) == 0x00010006u);
 
-    const auto jni_probe = jni_memory.allocate_tail(8, 2);
+    const auto jni_probe = jni_memory.allocate_tail(10, 2);
     assert(jni_probe.has_value());
 
+    // Preserve the caller's LR across BLX and return through POP {PC}.
     const std::uint16_t jni_thumb[] = {
-        0x6801,
-        0x690A,
-        0x4790,
-        0x4770
+        0xB500, // PUSH {LR}
+        0x6801, // LDR R1, [R0]
+        0x690A, // LDR R2, [R1, #16] (JNI GetVersion)
+        0x4790, // BLX R2
+        0xBD00  // POP {PC}
     };
 
     assert(jni_memory.write(
