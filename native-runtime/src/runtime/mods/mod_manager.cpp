@@ -16,7 +16,7 @@ bool ModManager::initialize(const std::filesystem::path& mods_root_dir) {
     if (!std::filesystem::exists(mods_directory_, ec)) {
         std::filesystem::create_directories(mods_directory_, ec);
     }
-    MC3_LOG_INFO("ModManager: Initialized mods directory: " + mods_directory_.string());
+    mc3::log_info("ModManager: Initialized mods directory: " + mods_directory_.string());
     rescan_mods();
     return true;
 }
@@ -99,14 +99,14 @@ void ModManager::rescan_mods() {
     hd_textures.vanilla_safe = true; // Client-side textures are safe for iOS/Android netplay!
     mods_.push_back(hd_textures);
 
-    MC3_LOG_INFO("ModManager: Scanned " + std::to_string(mods_.size()) + " mod packages.");
+    mc3::log_info("ModManager: Scanned " + std::to_string(mods_.size()) + " mod packages.");
 }
 
 bool ModManager::enable_mod(const std::string& mod_id, bool enable) {
     for (auto& mod : mods_) {
         if (mod.id == mod_id) {
             mod.enabled = enable;
-            MC3_LOG_INFO("ModManager: Mod " + mod_id + " is now " + (enable ? "ENABLED" : "DISABLED"));
+            mc3::log_info("ModManager: Mod " + mod_id + " is now " + (enable ? "ENABLED" : "DISABLED"));
             return true;
         }
     }
