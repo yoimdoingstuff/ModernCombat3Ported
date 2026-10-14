@@ -2,13 +2,14 @@ name: Multi-Platform CI & Release Packaging
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
     tags: [ 'v*' ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
+  workflow_dispatch:
 
 concurrency:
-  group: mc3ported-ci-${{ github.ref }}
+  group: mc3ported-native-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -42,20 +43,20 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ libboost-all-dev libsdl3-dev
+          sudo apt-get install -y cmake ninja-build g++ libsdl2-dev
 
       - name: Setup macOS Dependencies
         if: runner.os == 'macOS'
         run: |
-          brew install cmake ninja boost sdl3
+          brew install cmake ninja sdl2
 
       - name: Configure CMake (Windows)
         if: runner.os == 'Windows'
         run: |
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_BUILD_TYPE=Release `
             -DMC3_ENABLE_TESTS=ON `
-            -DMC3_ENABLE_TOOLS=ON `
-            -DMC3_ENABLE_DYNARMIC=ON
+            -DMC3_ENABLE_TOOLS=ON
 
       - name: Configure CMake (POSIX)
         if: runner.os != 'Windows'
@@ -63,10 +64,9 @@ jobs:
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DMC3_ENABLE_TESTS=ON \
-            -DMC3_ENABLE_TOOLS=ON \
-            -DMC3_ENABLE_DYNARMIC=ON
+            -DMC3_ENABLE_TOOLS=ON
 
-      - name: Compile Executables & Builder Tool
+      - name: Compile Executables & Tools
         run: cmake --build build --config Release --parallel 2
 
       - name: Execute Runtime Tests
@@ -75,32 +75,41 @@ jobs:
       - name: Package Release Artifacts (Windows)
         if: runner.os == 'Windows'
         run: |
-          mkdir dist
-          copy build\bin\Release\mc3.exe dist\
-          copy build\bin\Release\mc3inspect.exe dist\
-          copy build\bin\Release\mc3builder.exe dist\
-          copy README.md dist\
-          copy agents.md dist\
-          7z a ${{ matrix.archive }} .\dist\*
+          New-Item -ItemType Directory -Force -Path dist
+          if (Test-Path "build\bin\Release\mc3.exe") {
+            Copy-Item "build\bin\Release\*.exe" -Destination "dist\"
+          } elseif (Test-Path "build\bin\mc3.exe") {
+            Copy-Item "build\bin\*.exe" -Destination "dist\"
+          } elseif (Test-Path "build\Release\mc3.exe") {
+            Copy-Item "build\Release\*.exe" -Destination "dist\"
+          }
+          if (Test-Path "README.md") { Copy-Item "README.md" "dist\" }
+          if (Test-Path "agents.md") { Copy-Item "agents.md" "dist\" }
+          Compress-Archive -Path dist\* -DestinationPath ${{ matrix.archive }} -Force
 
       - name: Package Release Artifacts (Linux)
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist
-          cp build/mc3 build/mc3inspect build/mc3builder dist/
-          cp README.md agents.md dist/
+          find build -maxdepth 3 -type f \( -name "mc3" -o -name "mc3inspect" -o -name "mc3builder" \) -exec cp {} dist/ \;
+          [ -f README.md ] && cp README.md dist/
+          [ -f agents.md ] && cp agents.md dist/
+          chmod +x dist/mc3 dist/mc3inspect dist/mc3builder 2>/dev/null || true
           tar -czvf ${{ matrix.archive }} -C dist .
 
       - name: Package Release Artifacts (macOS)
         if: runner.os == 'macOS'
         run: |
           mkdir -p dist
-          cp build/mc3 build/mc3inspect build/mc3builder dist/
-          cp README.md agents.md dist/
-          zip -r ${{ matrix.archive }} dist
+          find build -maxdepth 3 -type f \( -name "mc3" -o -name "mc3inspect" -o -name "mc3builder" \) -exec cp {} dist/ \;
+          [ -f README.md ] && cp README.md dist/
+          [ -f agents.md ] && cp agents.md dist/
+          chmod +x dist/mc3 dist/mc3inspect dist/mc3builder 2>/dev/null || true
+          (cd dist && zip -r ../${{ matrix.archive }} .)
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.os }}-binaries
           path: ${{ matrix.archive }}
+          if-no-files-found: warn

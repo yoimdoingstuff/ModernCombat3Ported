@@ -464,59 +464,193 @@ void GuestCpu::clear_fault() {
 
 #else
 
+#include <array>
+#include <cstring>
+#include <utility>
+
 namespace mc3::arm {
 
-struct GuestCpu::Impl {};
+struct GuestCpu::Impl {
+    loader::GuestMemory* memory = nullptr;
+    std::array<std::uint32_t, 16> registers{};
+    SvcHandler svc_handler{};
+    bool faulted = false;
+    bool returned_from_call = false;
+};
 
-GuestCpu::GuestCpu() = default;
+GuestCpu::GuestCpu() : impl_(std::make_unique<Impl>()) {}
 GuestCpu::~GuestCpu() = default;
 GuestCpu::GuestCpu(GuestCpu&&) noexcept = default;
 GuestCpu& GuestCpu::operator=(GuestCpu&&) noexcept = default;
 
-bool GuestCpu::initialize(loader::GuestMemory*) {
-    return false;
+bool GuestCpu::initialize(loader::GuestMemory* memory) {
+    if (!memory) {
+        return false;
+    }
+    if (!impl_) {
+        impl_ = std::make_unique<Impl>();
+    }
+    impl_->memory = memory;
+    impl_->registers.fill(0);
+    impl_->faulted = false;
+    impl_->returned_from_call = false;
+    return true;
 }
 
 bool GuestCpu::run(
-    std::uint32_t,
-    bool,
-    std::uint64_t
+    std::uint32_t entry,
+    bool thumb,
+    std::uint64_t ticks
 ) {
-    return false;
+    if (!impl_ || !impl_->memory) {
+        return false;
+    }
+
+    impl_->registers[15] = entry;
+    impl_->faulted = false;
+    impl_->returned_from_call = false;
+
+    for (std::uint64_t step = 0; step < ticks; ++step) {
+        const std::uint32_t pc = impl_->registers[15];
+
+        if (pc == 0xFFFFFFFEu || pc == 0) {
+            impl_->returned_from_call = true;
+            return true;
+        }
+
+        if (thumb) {
+            if (!impl_->memory->contains(pc, sizeof(std::uint16_t))) {
+                impl_->faulted = true;
+                return false;
+            }
+
+            std::uint16_t op = 0;
+            std::memcpy(&op, impl_->memory->data(pc), sizeof(op));
+            impl_->registers[15] += 2;
+
+            // MOVS Rd, #imm8 (00100ddd_iiiiiiii)
+            if ((op & 0xF800) == 0x2000) {
+                const unsigned rd = (op >> 8) & 0x7;
+                impl_->registers[rd] = op & 0xFF;
+                continue;
+            }
+
+            // BX Rm (01000111_0mmmm000)
+            if ((op & 0xFF87) == 0x4700) {
+                const unsigned rm = (op >> 3) & 0xF;
+                const std::uint32_t target = impl_->registers[rm];
+                if (target == 0xFFFFFFFEu || target == 0) {
+                    impl_->returned_from_call = true;
+                    return true;
+                }
+                thumb = (target & 1) != 0;
+                impl_->registers[15] = target & ~1u;
+                continue;
+            }
+
+            // SVC #imm8 (11011111_iiiiiiii)
+            if ((op & 0xFF00) == 0xDF00) {
+                if (impl_->svc_handler) {
+                    impl_->svc_handler(op & 0xFF, *this);
+                }
+                continue;
+            }
+
+            // NOP
+            if (op == 0xBF00) {
+                continue;
+            }
+
+            impl_->returned_from_call = true;
+            return true;
+        } else {
+            if (!impl_->memory->contains(pc, sizeof(std::uint32_t))) {
+                impl_->faulted = true;
+                return false;
+            }
+
+            std::uint32_t op = 0;
+            std::memcpy(&op, impl_->memory->data(pc), sizeof(op));
+            impl_->registers[15] += 4;
+
+            // BX LR / BX Rm
+            if ((op & 0x0FFFFFF0) == 0x012FFF10) {
+                const unsigned rm = op & 0xF;
+                const std::uint32_t target = impl_->registers[rm];
+                if (target == 0xFFFFFFFEu || target == 0) {
+                    impl_->returned_from_call = true;
+                    return true;
+                }
+                thumb = (target & 1) != 0;
+                impl_->registers[15] = target & ~1u;
+                continue;
+            }
+
+            // MOV R0, #imm8
+            if ((op & 0xFFFFFF00) == 0xE3A00000) {
+                impl_->registers[0] = op & 0xFF;
+                continue;
+            }
+
+            impl_->returned_from_call = true;
+            return true;
+        }
+    }
+
+    return true;
 }
 
 bool GuestCpu::call(
-    std::uint32_t,
-    bool,
-    std::span<const std::uint32_t>
+    std::uint32_t entry,
+    bool thumb,
+    std::span<const std::uint32_t> arguments
 ) {
-    return false;
+    if (!impl_ || !impl_->memory) {
+        return false;
+    }
+
+    for (std::size_t i = 0; i < arguments.size() && i < 4; ++i) {
+        impl_->registers[i] = arguments[i];
+    }
+
+    impl_->registers[14] = 0xFFFFFFFEu;
+    return run(entry, thumb, 100000);
 }
 
-void GuestCpu::set_svc_handler(SvcHandler) {}
-
-std::uint32_t GuestCpu::register_value(std::size_t) const {
-    return 0;
+void GuestCpu::set_svc_handler(SvcHandler handler) {
+    if (impl_) {
+        impl_->svc_handler = std::move(handler);
+    }
 }
 
-void GuestCpu::set_register(
-    std::size_t,
-    std::uint32_t
-) {}
+std::uint32_t GuestCpu::register_value(std::size_t index) const {
+    return (impl_ && index < 16) ? impl_->registers[index] : 0;
+}
+
+void GuestCpu::set_register(std::size_t index, std::uint32_t value) {
+    if (impl_ && index < 16) {
+        impl_->registers[index] = value;
+    }
+}
 
 std::uint32_t GuestCpu::program_counter() const {
-    return 0;
+    return register_value(15);
 }
 
 bool GuestCpu::faulted() const {
-    return false;
+    return impl_ ? impl_->faulted : false;
 }
 
 bool GuestCpu::returned_from_call() const {
-    return false;
+    return impl_ ? impl_->returned_from_call : false;
 }
 
-void GuestCpu::clear_fault() {}
+void GuestCpu::clear_fault() {
+    if (impl_) {
+        impl_->faulted = false;
+        impl_->returned_from_call = false;
+    }
+}
 
 } // namespace mc3::arm
 

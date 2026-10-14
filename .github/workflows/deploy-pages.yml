@@ -2,7 +2,7 @@ name: Deploy Web Portal to GitHub Pages
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
@@ -12,7 +12,6 @@ permissions:
   id-token: write
 
 # Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
 concurrency:
   group: "pages"
   cancel-in-progress: false
@@ -32,13 +31,19 @@ jobs:
           cache: 'npm'
 
       - name: Install Node Dependencies
-        run: npm ci || npm install
+        run: npm ci --legacy-peer-deps || npm install --legacy-peer-deps
 
       - name: Build Web Application
         run: npm run build
 
+      - name: Prepare SPA routing for GitHub Pages
+        run: |
+          cp dist/index.html dist/404.html || true
+          touch dist/.nojekyll
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
+        continue-on-error: true
 
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
