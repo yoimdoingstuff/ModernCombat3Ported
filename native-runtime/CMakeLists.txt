@@ -121,6 +121,15 @@ if(MC3_ENABLE_TESTS)
     target_link_libraries(mc3_runtime_tests PRIVATE mc3_runtime)
     mc3_set_target_options(mc3_runtime_tests)
 
+    # The runtime tests use assert() checks that also perform setup operations.
+    # Release builds define NDEBUG globally, which would remove those expressions
+    # and can make later test code crash. Keep assertions enabled for this target.
+    if(MSVC)
+        target_compile_options(mc3_runtime_tests PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(mc3_runtime_tests PRIVATE -UNDEBUG)
+    endif()
+
     add_test(NAME mc3_runtime_tests COMMAND mc3_runtime_tests)
 endif()
 
