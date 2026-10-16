@@ -55,6 +55,7 @@ private:
     uint32_t width_ = 1920;
     uint32_t height_ = 1080;
     bool mouse_captured_ = false;
+    void* window_handle_ = nullptr;
 
     std::function<void(int, bool)> on_key_;
     std::function<void(float, float)> on_mouse_move_;

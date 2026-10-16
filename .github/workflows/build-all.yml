@@ -70,7 +70,7 @@ jobs:
         run: |
           HOMEBREW_NO_AUTO_UPDATE=1 brew install ninja sdl2 || true
 
-      - name: Setup MSVC environment
+      - name: Setup MSVC Developer Environment (Windows)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
         with:

@@ -16,7 +16,8 @@ import {
   Activity,
   CheckCircle2,
   Clock,
-  Gamepad2
+  Gamepad2,
+  Play
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -108,6 +109,18 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
 
         {/* Tab Navigation Controls */}
         <nav className="flex items-center gap-1 bg-slate-900/90 border border-slate-800 p-1 rounded-lg overflow-x-auto">
+          <button
+            onClick={() => onTabChange('launcher')}
+            className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+              activeTab === 'launcher'
+                ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
+                : 'text-amber-400 hover:text-amber-300 hover:bg-amber-500/10'
+            }`}
+          >
+            <Play className="w-3.5 h-3.5 fill-current" />
+            <span>Playable Web Simulator</span>
+          </button>
+
           <button
             onClick={() => onTabChange('inspector')}
             className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${

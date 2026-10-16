@@ -96,6 +96,7 @@ mc3_set_target_options(mc3)
 
 if(WIN32)
     target_compile_definitions(mc3_runtime PUBLIC MC3_PLATFORM_WINDOWS=1)
+    target_link_libraries(mc3_runtime PUBLIC user32 gdi32)
 endif()
 
 if(MC3_ENABLE_TOOLS)

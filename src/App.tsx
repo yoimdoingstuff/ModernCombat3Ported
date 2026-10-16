@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Header } from './components/Header';
+import { RuntimeSimulatorTab } from './components/RuntimeSimulatorTab';
 import { DataInspectorTab } from './components/DataInspectorTab';
 import { ArmTranslationTab } from './components/ArmTranslationTab';
 import { PcFeaturesTab } from './components/PcFeaturesTab';
@@ -12,13 +13,14 @@ import { ActiveTab } from './types/mc3';
 import { ShieldCheck, Github, ExternalLink, Terminal, HardDrive, Globe } from 'lucide-react';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('inspector');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('launcher');
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500/30 selection:text-amber-200">
       <Header activeTab={activeTab} onTabChange={setActiveTab} />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
+        {activeTab === 'launcher' && <RuntimeSimulatorTab />}
         {activeTab === 'inspector' && <DataInspectorTab />}
         {activeTab === 'arm_runtime' && <ArmTranslationTab />}
         {activeTab === 'pc_features' && <PcFeaturesTab />}

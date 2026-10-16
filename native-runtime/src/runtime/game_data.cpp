@@ -17,23 +17,24 @@ constexpr const char* kMc3Library =
 std::optional<NativeLibraryInfo> find_armv7(
     const std::filesystem::path& root
 ) {
-    static constexpr const char* names[] = {
-        "lib/armeabi-v7a/libModernCombat3.so",
-        "lib/armeabi/libModernCombat3.so",
-        "libModernCombat3.so"
+    static constexpr struct {
+        const char* path;
+        const char* abi;
+    } candidates[] = {
+        {"lib/armeabi-v7a/libModernCombat3.so", "armeabi-v7a"},
+        {"lib/x86/libModernCombat3.so", "x86"},
+        {"lib/armeabi/libModernCombat3.so", "armeabi"},
+        {"libModernCombat3.so", "unknown-arm32"}
     };
 
-    for (const char* relative : names) {
-        const auto path = root / relative;
+    for (const auto& item : candidates) {
+        const auto path = root / item.path;
         std::error_code ec;
         if (std::filesystem::is_regular_file(path, ec)) {
             const auto size = std::filesystem::file_size(path, ec);
             return NativeLibraryInfo{
                 .path = path,
-                .abi =
-                    (std::string(relative).find("armeabi-v7a") != std::string::npos)
-                        ? "armeabi-v7a"
-                        : "unknown-arm32",
+                .abi = item.abi,
                 .size = ec ? 0 : size
             };
         }
@@ -114,18 +115,38 @@ std::optional<GameDataInfo> inspect_game_data(
             const auto extracted =
                 materialization_root / "libModernCombat3.so";
 
-            if (!std::filesystem::exists(extracted, ec)) {
-                if (!apk_contains_entry(input, kMc3Library)) {
-                    log_error(
-                        "MC3 ARMv7 library is missing from the APK. Expected " +
-                        std::string(kMc3Library)
-                    );
-                    return std::nullopt;
-                }
+            static constexpr struct {
+                const char* path;
+                const char* abi;
+            } kCandidateLibs[] = {
+                {"lib/armeabi-v7a/libModernCombat3.so", "armeabi-v7a"},
+                {"lib/x86/libModernCombat3.so", "x86"},
+                {"lib/armeabi/libModernCombat3.so", "armeabi"},
+                {"libModernCombat3.so", "unknown-arm32"}
+            };
 
+            const char* selected_entry = nullptr;
+            const char* selected_abi = "armeabi-v7a";
+            for (const auto& item : kCandidateLibs) {
+                if (apk_contains_entry(input, item.path)) {
+                    selected_entry = item.path;
+                    selected_abi = item.abi;
+                    break;
+                }
+            }
+
+            if (!selected_entry) {
+                log_error(
+                    "MC3 native library (libModernCombat3.so) is missing from the APK. "
+                    "Checked armeabi-v7a, x86, and armeabi."
+                );
+                return std::nullopt;
+            }
+
+            if (!std::filesystem::exists(extracted, ec)) {
                 if (!extract_apk_entry(
                         input,
-                        kMc3Library,
+                        selected_entry,
                         extracted
                     )) {
                     return std::nullopt;
@@ -135,30 +156,46 @@ std::optional<GameDataInfo> inspect_game_data(
             auto size = std::filesystem::file_size(extracted, ec);
             if (ec || size == 0) {
                 log_error(
-                    "Materialized MC3 ARMv7 library has an invalid size."
+                    "Materialized MC3 library has an invalid size."
                 );
                 return std::nullopt;
             }
 
             info.armv7_library = NativeLibraryInfo{
                 .path = extracted,
-                .abi = "armeabi-v7a",
+                .abi = selected_abi,
                 .size = size
             };
 
+            log_info(std::string("Extracted MC3 library (") + selected_abi + ") from " + selected_entry);
             info.looks_like_apk_extract = true;
             return info;
         }
 
-        if (!apk_contains_entry(input, kMc3Library)) {
+        static constexpr const char* kCandidateLibs[] = {
+            "lib/armeabi-v7a/libModernCombat3.so",
+            "lib/x86/libModernCombat3.so",
+            "lib/armeabi/libModernCombat3.so",
+            "libModernCombat3.so"
+        };
+
+        bool found_any = false;
+        for (const auto* lib_path : kCandidateLibs) {
+            if (apk_contains_entry(input, lib_path)) {
+                found_any = true;
+                log_info(std::string("APK contains MC3 native library: ") + lib_path);
+                break;
+            }
+        }
+
+        if (!found_any) {
             log_error(
-                "MC3 ARMv7 library is missing from the APK. Expected " +
-                std::string(kMc3Library)
+                "MC3 native library is missing from the APK. "
+                "Checked armeabi-v7a, x86, and armeabi."
             );
             return std::nullopt;
         }
 
-        log_info("APK contains the MC3 ARMv7 library.");
         info.looks_like_apk_extract = true;
         return info;
     }

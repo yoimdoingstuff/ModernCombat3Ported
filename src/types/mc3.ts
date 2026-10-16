@@ -1,4 +1,4 @@
-export type ActiveTab = 'inspector' | 'arm_runtime' | 'pc_features' | 'multiplayer' | 'mods' | 'builder' | 'builds' | 'architecture';
+export type ActiveTab = 'launcher' | 'inspector' | 'arm_runtime' | 'pc_features' | 'multiplayer' | 'mods' | 'builder' | 'builds' | 'architecture';
 
 export interface KeyBinding {
   id: string;

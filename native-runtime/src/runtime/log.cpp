@@ -29,6 +29,15 @@ void log(LogLevel level, std::string_view message) {
     std::fprintf(stderr, "[%02d:%02d:%02d] [%s] %.*s\n",
         tm.tm_hour, tm.tm_min, tm.tm_sec, level_name(level),
         static_cast<int>(message.size()), message.data());
+
+    // Also write to a persistent log file so double-clicking mc3.exe produces diagnostic output
+    static FILE* s_logfile = std::fopen("mc3_runtime.log", "a");
+    if (s_logfile) {
+        std::fprintf(s_logfile, "[%02d:%02d:%02d] [%s] %.*s\n",
+            tm.tm_hour, tm.tm_min, tm.tm_sec, level_name(level),
+            static_cast<int>(message.size()), message.data());
+        std::fflush(s_logfile);
+    }
 }
 void log_debug(std::string_view message) { log(LogLevel::Debug, message); }
 void log_info(std::string_view message) { log(LogLevel::Info, message); }

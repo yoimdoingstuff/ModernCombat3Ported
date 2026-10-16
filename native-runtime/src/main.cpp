@@ -9,6 +9,47 @@
 #include "mc3/net/multiplayer.hpp"
 
 #include <filesystem>
+#include <fstream>
+#include <cstdlib>
+
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
+namespace {
+
+void show_user_alert(const std::string& title, const std::string& message) {
+    // Write to a startup notice file in current directory so users have a permanent record
+    std::ofstream out("mc3_startup_notice.txt", std::ios::trunc);
+    if (out.is_open()) {
+        out << "====================================================\n";
+        out << title << "\n";
+        out << "====================================================\n\n";
+        out << message << "\n\n";
+        out << "Visit https://yoimdoingstuff.github.io/mc3ported/ for complete setup guides.\n";
+    }
+
+#if defined(_WIN32)
+    MessageBoxA(NULL, message.c_str(), title.c_str(), MB_OK | MB_ICONINFORMATION);
+#elif defined(__APPLE__)
+    std::string safe_msg = message;
+    for (char& c : safe_msg) {
+        if (c == '"' || c == '\'') c = ' ';
+    }
+    std::string cmd = "osascript -e 'display dialog \"" + safe_msg + "\" with title \"" + title + "\" buttons {\"OK\"} default button \"OK\" with icon note' 2>/dev/null";
+    (void)std::system(cmd.c_str());
+#else
+    std::string safe_msg = message;
+    for (char& c : safe_msg) {
+        if (c == '"' || c == '\'') c = ' ';
+    }
+    std::string cmd = "zenity --info --title=\"" + title + "\" --text=\"" + safe_msg + "\" 2>/dev/null || kdialog --msgbox \"" + safe_msg + "\" --title \"" + title + "\" 2>/dev/null || true";
+    (void)std::system(cmd.c_str());
+#endif
+}
+
+} // namespace
 
 int main(int argc, char** argv) {
     mc3::log_info("MC3 Ported runtime bootstrap");
@@ -16,6 +57,19 @@ int main(int argc, char** argv) {
 
     const auto config = mc3::load_config(argc, argv);
     if (!config) {
+        show_user_alert(
+            "Modern Combat 3: Fallen Nation (PC Port)",
+            "Welcome to Modern Combat 3 Ported!\n\n"
+            "Game data (Modern Combat 3 APK) was not found.\n\n"
+            "HOW TO PLAY:\n"
+            "1. Place your Modern Combat 3 APK file (e.g. ModernCombat3.apk)\n"
+            "   in the same folder as this executable or in a 'data' subfolder.\n\n"
+            "2. Double-click mc3 again to launch!\n\n"
+            "Alternatively, run from terminal:\n"
+            "   mc3 --game-data <path-to-apk-or-folder>\n\n"
+            "A copy of these instructions has been saved to mc3_startup_notice.txt.\n"
+            "See mc3_runtime.log for startup logs."
+        );
         return 2;
     }
 
@@ -47,6 +101,13 @@ int main(int argc, char** argv) {
 
     if (!data || !mc3::validate_game_data(*data)) {
         mc3::log_error("MC3 game-data validation failed.");
+        show_user_alert(
+            "Modern Combat 3: Game Data Validation Failed",
+            "The selected game data does not contain the required MC3 files.\n\n"
+            "Path checked: " + config->game_data.string() + "\n\n"
+            "Make sure your APK contains libModernCombat3.so (armeabi-v7a).\n"
+            "Check mc3_runtime.log for details."
+        );
         return 4;
     }
 
